@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const meals = await getMealSchedule(officeCode, schoolCode, date);
+    const meals = await getMealSchedule({ officeCode, schoolCode, date });
     return NextResponse.json({ meals });
   } catch (error) {
     const message =
