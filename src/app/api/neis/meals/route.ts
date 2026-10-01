@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getMeals } from "@/lib/neis";
+import { getMealSchedule } from "@/lib/neis";
 
 export async function GET(request: NextRequest) {
   const officeCode = request.nextUrl.searchParams.get("officeCode") ?? "";
@@ -9,12 +9,12 @@ export async function GET(request: NextRequest) {
   if (!officeCode || !schoolCode || !date) {
     return NextResponse.json(
       { error: "학교와 날짜를 선택하세요." },
-      { status: 400 },
+      { status: 400 }
     );
   }
 
   try {
-    const meals = await getMeals({ officeCode, schoolCode, date });
+    const meals = await getMealSchedule(officeCode, schoolCode, date);
     return NextResponse.json({ meals });
   } catch (error) {
     const message =
