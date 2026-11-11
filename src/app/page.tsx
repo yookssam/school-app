@@ -47,12 +47,6 @@ interface Student {
 }
 
 export default function Home() {
-  const [user] = useState({
-    name: '천준혁 선생님',
-    email: 'demo@example.invalid',
-    role: 'ADMIN',
-  });
-
   const [activeMenu, setActiveMenu] = useState<
     'dashboard' | 'calendar' | 'timetable' | 'meal' | 'student' | 'teachers' | 'deptSheet' | 'bookmark' | 'toolbox'
   >('dashboard');
@@ -124,39 +118,35 @@ export default function Home() {
   const [newEventDate, setNewEventDate] = useState('2026-09-29');
   const [newEventCategory, setNewEventCategory] = useState<'나이스 학사일정' | '구글 캘린더'>('구글 캘린더');
 
-  // NEIS OpenAPI 연동 로직 (전달받은 API 인증키 반영)
-  const NEIS_API_KEY = '';
-  const fetchNeisSchedule = async (year: number, month: number) => {
-    try {
-      const yearStr = year.toString();
-      const monthStr = (month + 1).toString().padStart(2, '0');
-      const url = `https://open.neis.go.kr/hub/SchoolSchedule?KEY=${NEIS_API_KEY}&Type=json&pIndex=1&pSize=100&ATPT_OFCDC_SC_CODE=J10&SD_SCHUL_CODE=7530851&AA_YMD=${yearStr}${monthStr}`;
-      
-      const res = await fetch(url);
-      const data = await res.json();
-
-      if (data.SchoolSchedule && data.SchoolSchedule[1].row) {
-        const neisRows = data.SchoolSchedule[1].row;
-        const fetchedEvents: CalendarEvent[] = neisRows.map((item: any, idx: number) => {
-          const rawDate = item.AA_YMD;
-          const formattedDate = `${rawDate.substring(0,4)}-${rawDate.substring(4,6)}-${rawDate.substring(6,8)}`;
-          return {
-            id: Date.now() + idx,
-            date: formattedDate,
-            title: `[나이스] ${item.EVENT_NM}`,
-            category: '나이스 학사일정',
-            color: 'bg-emerald-100 text-emerald-900 border-emerald-200',
-          };
-        });
-        setEvents((prev) => [...prev.filter((e) => e.category === '구글 캘린더' || e.id >= 100), ...fetchedEvents]);
-      }
-    } catch (err) {
-      console.log('NEIS OpenAPI 동기화 진행 중...', err);
-    }
-  };
-
   useEffect(() => {
-    fetchNeisSchedule(currentYear, currentMonth);
+    const controller = new AbortController();
+    const month = String(currentYear) + String(currentMonth + 1).padStart(2, '0');
+
+    async function loadSchedule() {
+      try {
+        const response = await fetch('/api/neis/schedule?month=' + month, { signal: controller.signal });
+        if (!response.ok) return;
+        const data: { events: { date: string; title: string }[] } = await response.json();
+        const fetchedEvents: CalendarEvent[] = data.events.map((event, index) => ({
+          id: Date.now() + index,
+          date: event.date,
+          title: '[나이스] ' + event.title,
+          category: '나이스 학사일정',
+          color: 'bg-emerald-100 text-emerald-900 border-emerald-200',
+        }));
+        if (!controller.signal.aborted) {
+          setEvents((previous) => [
+            ...previous.filter((event) => event.category !== '나이스 학사일정' || !event.title.startsWith('[나이스] ')),
+            ...fetchedEvents,
+          ]);
+        }
+      } catch {
+        if (!controller.signal.aborted) console.warn('학사일정을 불러오지 못했습니다.');
+      }
+    }
+
+    void loadSchedule();
+    return () => controller.abort();
   }, [currentYear, currentMonth]);
 
   const handleAddEvent = (e: React.FormEvent) => {
@@ -187,32 +177,19 @@ export default function Home() {
 
   // 선생님 명단 데이터 및 파일 업로드 Ref
   const [selectedDeptForTeacher, setSelectedDeptForTeacher] = useState<string>('전체 부서');
-  const [teachers, setTeachers] = useState<Teacher[]>([
-    { id: 1, name: '천준혁', dept: '예체능교육부', role: '체육교사 / 3-8 담임', email: 'demo@example.invalid', tel: '031-123-4567' },
-    { id: 2, name: '김교무', dept: '교무기획부', role: '부장교사 / 국어', email: 'gyomu@goe.go.kr', tel: '내선 101' },
-    { id: 3, name: '이연구', dept: '연구혁신부', role: '부장교사 / 수학', email: 'yeongu@goe.go.kr', tel: '내선 102' },
-    { id: 4, name: '박학생', dept: '학생인권자치부', role: '부장교사 / 영어', email: 'haksaeng@goe.go.kr', tel: '내선 103' },
-    { id: 5, name: '최정보', dept: 'IT교육정보부', role: '부장교사 / 정보', email: 'itinfo@goe.go.kr', tel: '내선 104' },
-    { id: 6, name: '정학년', dept: '3학년부', role: '3학년 부장 / 사회', email: 'grade3@goe.go.kr', tel: '내선 105' },
-  ]);
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
   const teacherFileInputRef = useRef<HTMLInputElement>(null);
 
   // 학생 명렬표 데이터 및 파일 업로드 Ref
-  const [students, setStudents] = useState<Student[]>([
-    { no: 1, name: '강민준', gender: '남', phone: '', note: '체육부장' },
-    { no: 2, name: '김서연', gender: '여', phone: '', note: '반장' },
-    { no: 3, name: '박도현', gender: '남', phone: '', note: '부반장' },
-    { no: 4, name: '이지은', gender: '여', phone: '', note: '환경부장' },
-    { no: 5, name: '최현우', gender: '남', phone: '', note: '학습부장' },
-  ]);
+  const [students, setStudents] = useState<Student[]>([]);
   const studentFileInputRef = useRef<HTMLInputElement>(null);
 
   // 시간표 관련 State (선생님 검색)
-  const [selectedTeacherForTimetable, setSelectedTeacherForTimetable] = useState<string>('천준혁');
+  const [selectedTeacherForTimetable, setSelectedTeacherForTimetable] = useState<string>('예시 교사 1');
 
   // 교사별 전체 시간표 데이터
   const timetablesData: Record<string, string[][]> = {
-    '천준혁': [
+    '예시 교사 1': [
       ['-', '-', '체육 (3-7)', '-', '-'],
       ['체육 (3-8)', '-', '-', '-', '-'],
       ['-', '-', '-', '체육 (3-5)', '-'],
@@ -221,7 +198,7 @@ export default function Home() {
       ['-', '-', '-', '-', '-'],
       ['-', '-', '-', '-', '-'],
     ],
-    '김교무': [
+    '예시 교사 2': [
       ['국어 (1-1)', '국어 (1-2)', '-', '국어 (1-1)', '-'],
       ['-', '국어 (1-3)', '국어 (1-2)', '-', '-'],
       ['국어 (1-3)', '-', '-', '-', '국어 (1-1)'],
@@ -230,7 +207,7 @@ export default function Home() {
       ['-', '-', '-', '-', '-'],
       ['-', '-', '-', '-', '-'],
     ],
-    '이연구': [
+    '예시 교사 3': [
       ['-', '수학 (2-1)', '수학 (2-2)', '-', '-'],
       ['수학 (2-3)', '-', '-', '수학 (2-1)', '-'],
       ['-', '수학 (2-2)', '-', '-', '수학 (2-3)'],
@@ -252,7 +229,7 @@ export default function Home() {
 
   // 학생 양식 다운로드 및 업로드
   const handleDownloadStudentSample = () => {
-    const sampleContent = '번호,성명,성별,비상연락처,특이사항\n1,홍길동,남,,주번\n2,성춘향,여,,미술부장';
+    const sampleContent = '번호,성명,성별,비상연락처,특이사항\n1,예시 학생,,,';
     downloadCSV('학생명렬표_업로드양식.csv', sampleContent);
   };
 
@@ -286,7 +263,7 @@ export default function Home() {
 
   // 선생님 양식 다운로드 및 업로드
   const handleDownloadTeacherSample = () => {
-    const sampleContent = '성명,소속부서,담당직책,이메일,내선번호\n홍길동,교무기획부,교무안내,hong@goe.go.kr,내선 106\n김영희,1학년부,1학년 담임,kim@goe.go.kr,내선 107';
+    const sampleContent = '성명,소속부서,담당직책,이메일,내선번호\n예시 교직원,,,,';
     downloadCSV('교직원명단_업로드양식.csv', sampleContent);
   };
 
@@ -404,8 +381,7 @@ export default function Home() {
           <div className="flex items-center gap-2 bg-white p-2 rounded-xl border">
             <div className="w-7 h-7 rounded-full bg-slate-200 flex items-center justify-center text-xs">👨‍🏫</div>
             <div className="truncate">
-              <div className="font-bold text-slate-800 text-[11px] truncate">{user.name}</div>
-              <div className="text-[9px] text-slate-400 truncate">{user.email}</div>
+              <div className="font-bold text-slate-800 text-[11px] truncate">선부 ON</div>
             </div>
           </div>
         </div>
@@ -719,7 +695,7 @@ export default function Home() {
                 <div className="bg-slate-100 font-bold p-2.5 border-b">금</div>
 
                 {['1교시 (09:10~)', '2교시 (10:10~)', '3교시 (11:10~)', '4교시 (12:10~)', '5교시 (14:00~)', '6교시 (15:00~)', '7교시 (16:00~)'].map((period, pIdx) => {
-                  const currentTimetable = timetablesData[selectedTeacherForTimetable] || timetablesData['천준혁'];
+                  const currentTimetable = timetablesData[selectedTeacherForTimetable] || timetablesData['예시 교사 1'];
                   const rowData = currentTimetable[pIdx] || ['-', '-', '-', '-', '-'];
 
                   return (
